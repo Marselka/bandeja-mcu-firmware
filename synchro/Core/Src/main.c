@@ -33,7 +33,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define N_CHARS 62
+#define N_CHARS 73
+#define LIDAR_N_CHARS 66
 #define N_BYTES 16
 /* USER CODE END PD */
 
@@ -53,19 +54,24 @@ TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart4;
+UART_HandleTypeDef huart5;
+DMA_HandleTypeDef hdma_uart4_tx;
+DMA_HandleTypeDef hdma_uart5_tx;
 
 /* USER CODE BEGIN PV */
 uint16_t count = 0;
 uint8_t flag_to_read_values = 0;
+uint8_t flag_to_transmit_to_lidar = 0;
 
-RTC_TimeTypeDef sTime = {0};
-RTC_DateTypeDef sDate = {0};
-RTC_TimeTypeDef sTime_cam = {0};
-RTC_DateTypeDef sDate_cam = {0};
+RTC_TimeTypeDef sTime_imu = {0}, sTime_cam = {0}, sTime_lidar = {0};
+RTC_DateTypeDef sDate_imu = {0}, sDate_cam = {0}, sDate_lidar = {0};
+
 
 uint8_t dat[N_BYTES];
 uint8_t dat_buf[N_BYTES];
 uint8_t str[N_CHARS];
+uint8_t lidar_str[LIDAR_N_CHARS];
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -78,6 +84,7 @@ static void MX_DMA_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_RTC_Init(void);
 static void MX_UART4_Init(void);
+static void MX_UART5_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -100,14 +107,14 @@ int _write(int file,char *ptr, int len) {
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
-	HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
 	//HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
   if(GPIO_Pin == GPIO_PIN_9)
   {
   	flag_to_read_values = 1;
-		HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-		HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+		HAL_RTC_GetTime(&hrtc, &sTime_imu, RTC_FORMAT_BIN);
+		HAL_RTC_GetDate(&hrtc, &sDate_imu, RTC_FORMAT_BIN);
 		//HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
+		HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
   }
 }
 
@@ -122,18 +129,13 @@ void setup_mpu(void) {
 
 void make_string(void) {
 	sprintf(str,
-		"%02x %02x %04x " 													//11
-		"%04x "																			//5
 		"%04x %04x %04x %04x %04x %04x %04x "			 	//35
+		"%04x "																			//5
+		"%02x %02x %04x " 													//11
+		"%02x %02x %04x "														//11
 		"%02x %02x %04x"														//10
 		"\n", 																			//1
-																								//=62
-		(uint8_t)(sTime.Minutes),
-		(uint8_t)(sTime.Seconds),
-		(uint16_t)(sTime.SubSeconds),
-
-		count,
-
+																								//=73
 		(uint16_t)(dat_buf[0]<<8 | dat_buf[1]),
 		(uint16_t)(dat_buf[2]<<8 | dat_buf[3]),
 		(uint16_t)(dat_buf[4]<<8 | dat_buf[5]),
@@ -142,10 +144,51 @@ void make_string(void) {
 		(uint16_t)(dat_buf[10]<<8 | dat_buf[11]),
 		(uint16_t)(dat_buf[12]<<8 | dat_buf[13]),
 
+		count,
+
+		(uint8_t)(sTime_imu.Minutes),
+		(uint8_t)(sTime_imu.Seconds),
+		(uint16_t)(sTime_imu.SubSeconds),
+
 		(uint8_t)(sTime_cam.Minutes),
 		(uint8_t)(sTime_cam.Seconds),
-		(uint16_t)(sTime_cam.SubSeconds)
+		(uint16_t)(sTime_cam.SubSeconds),
+
+		(uint8_t)(sTime_lidar.Minutes),
+		(uint8_t)(sTime_lidar.Seconds),
+		(uint16_t)(sTime_lidar.SubSeconds)
 	);
+}
+
+uint8_t checksum(char * s, uint8_t start, uint8_t end) {
+    uint8_t c = 0;
+    for (uint8_t i=start; i<end; i++) {
+      c = c ^ s[i];
+    }
+    return c;
+}
+
+void make_lidar_string(void) {
+	sprintf(lidar_str,
+		"$GPRMC"																							//6
+		",%02d%02d%02d"																				//7
+		",A,5542.2389,N,03741.6063,E,0.06,25.82,200906,,,*"		//49
+		"00"																									//2
+		"\r\n", 																							//2
+																													//=66
+		//".%04d"																								//5
+
+		(uint8_t)(sTime_lidar.Hours),
+		(uint8_t)(sTime_lidar.Minutes),
+		(uint8_t)(sTime_lidar.Seconds)
+		//(uint16_t)(sTime_lidar.SubSeconds)
+	);
+
+	uint8_t start = 1, end = LIDAR_N_CHARS-5;
+	uint8_t c = checksum(lidar_str, start, end);
+	//uint8_t c = checksum("GPGSA,A,3,10,07,05,02,29,04,08,13,,,,,1.72,1.03,1.38",0,52);
+	sprintf(&lidar_str[end+1], "%02X", c);
+
 }
 
 void delay(uint16_t n) {
@@ -161,16 +204,38 @@ void cp() {
 }
 
 void HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
-	if (htim->Instance == htim1.Instance && HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_9)==GPIO_PIN_SET)
+	/*if (htim->Instance == htim1.Instance && HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_9)==GPIO_PIN_SET)
 	{
 		HAL_RTC_GetTime(&hrtc, &sTime_cam, RTC_FORMAT_BIN);
 		HAL_RTC_GetDate(&hrtc, &sDate_cam, RTC_FORMAT_BIN);
 		HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_14);
+	}*/
+	if (htim->Instance == htim1.Instance)
+	{
+		if(HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_9)==GPIO_PIN_SET) {
+			HAL_RTC_GetTime(&hrtc, &sTime_lidar, RTC_FORMAT_BIN);
+			HAL_RTC_GetDate(&hrtc, &sDate_lidar, RTC_FORMAT_BIN);
+			flag_to_transmit_to_lidar = 1;
+		}
+		HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
+
 	}
+	if (htim->Instance == htim2.Instance)
+	{
+		if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0)==GPIO_PIN_SET) {
+			HAL_RTC_GetTime(&hrtc, &sTime_cam, RTC_FORMAT_BIN);
+			HAL_RTC_GetDate(&hrtc, &sDate_cam, RTC_FORMAT_BIN);
+		}
+		HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_14);
+	}
+	/*if (htim->Instance == htim3.Instance)
+	{
+		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_9);
+	}*/
 
 }
 
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+/*void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if (htim->Instance == htim1.Instance)
 	{
@@ -184,7 +249,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	{
 
 	}
-}
+}*/
 
 /* USER CODE END 0 */
 
@@ -223,24 +288,32 @@ int main(void)
   MX_I2C1_Init();
   MX_RTC_Init();
   MX_UART4_Init();
+  MX_UART5_Init();
   /* USER CODE BEGIN 2 */
-  /*while(1) {
-  	//HAL_UART_Transmit_DMA(&huart1, "1111\n", 5);
-  	HAL_UART_Transmit(&huart1, "1111\n", 5,1000);
-  	delay(65535);
-  }*/
 
   HAL_NVIC_DisableIRQ(EXTI9_5_IRQn);
   setup_mpu();
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
-  //HAL_GPIO_WritePin(GPIOD, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7, GPIO_PIN_RESET);
-  //HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7, GPIO_PIN_SET);
-  HAL_TIM_OC_Start_IT(&htim1, TIM_CHANNEL_1);
-  //HAL_TIM_OC_Start(&htim1, TIM_CHANNEL_2);
-  HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_1);
-  //HAL_TIM_Base_Start_IT(&htim2);
+	HAL_TIM_OC_Start_IT(&htim1, TIM_CHANNEL_1);
+	HAL_TIM_OC_Start_IT(&htim2, TIM_CHANNEL_1);
+	HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_1);
 
+	//Update_event = TIM_CLK/((PSC + 1)*(ARR + 1)*(RCR + 1))
+  //TIM_CLK = timer clock input
+  //PSC = 16-bit prescaler register
+  //ARR = 16/32-bit Autoreload register
+  //RCR = 16-bit repetition counter
+
+  //76.8 / ((0 + 1) * (1 + 1)) / 2 = 19.2 MHz
+  //76.8 / ((7679 + 1) * (999 + 1)) / 2 = 5 Hz
+  //76.8 / ((7679 + 1) * (4999 + 1)) / 2 = 1 Hz
+
+  //D14 RED
+  //D13 ORANGE
+  //D12  GREEN
+  //D15 BLUE
+  //D5  USB
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -250,18 +323,24 @@ int main(void)
   	if (flag_to_read_values == 1) {
 			HAL_NVIC_DisableIRQ(EXTI9_5_IRQn);
 			flag_to_read_values = 0;
-			HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_SET);
+			// HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_SET);
 			count++;
 			cp();
 			HAL_I2C_Mem_Read_DMA(&hi2c1, 0x68<<1, 59, 1, dat, 14);
 			make_string();
-			HAL_UART_Transmit(&huart4, str, N_CHARS, 1000);	//HAL_UART_Transmit_DMA(&huart4, str, N_CHARS);
-			delay(6000);
-			if (count & 256) { HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_15);}
+			HAL_UART_Transmit_DMA(&huart4, str, N_CHARS);//, 1000);	//HAL_UART_Transmit_DMA(&huart4, str, N_CHARS);
+			delay(60000);
+			if(count & 256) { HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_15);}
 			if(__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_9) != RESET) {__HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_9);}
 			HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
-			HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_RESET);
+			// HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_RESET);
 		}
+  	if (flag_to_transmit_to_lidar==1) {
+  		flag_to_transmit_to_lidar = 0;
+  		make_lidar_string();
+  		HAL_UART_Transmit_DMA(&huart5, lidar_str, LIDAR_N_CHARS);//, 1000);	//HAL_UART_Transmit_DMA(&huart5, str, N_CHARS);
+  	}
+
 	/*count++;
 	if (count%8==7) {
 		count2++;
@@ -308,11 +387,9 @@ void SystemClock_Config(void)
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
   /** Initializes the CPU, AHB and APB busses clocks 
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_HSE
-                              |RCC_OSCILLATORTYPE_LSE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE|RCC_OSCILLATORTYPE_LSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.LSEState = RCC_LSE_OFF;
-  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 5;
@@ -337,7 +414,7 @@ void SystemClock_Config(void)
     Error_Handler();
   }
   PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_RTC;
-  PeriphClkInitStruct.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
+  PeriphClkInitStruct.RTCClockSelection = RCC_RTCCLKSOURCE_HSE_DIV25;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -397,8 +474,8 @@ static void MX_RTC_Init(void)
   */
   hrtc.Instance = RTC;
   hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
-  hrtc.Init.AsynchPrediv = 0;
-  hrtc.Init.SynchPrediv = 32767;
+  hrtc.Init.AsynchPrediv = 32-1;
+  hrtc.Init.SynchPrediv = 10000-1;
   hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
   hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
   hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
@@ -433,9 +510,9 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 1 */
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 2000-1;
+  htim1.Init.Prescaler = 7680-1;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 640-1;
+  htim1.Init.Period = 5000-1;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -469,7 +546,6 @@ static void MX_TIM1_Init(void)
   {
     Error_Handler();
   }
-  __HAL_TIM_ENABLE_OCxPRELOAD(&htim1, TIM_CHANNEL_1);
   sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
   sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
   sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
@@ -508,9 +584,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 255;
+  htim2.Init.Prescaler = 7680-1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 655;
+  htim2.Init.Period = 1000-1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -532,7 +608,7 @@ static void MX_TIM2_Init(void)
   {
     Error_Handler();
   }
-  sConfigOC.OCMode = TIM_OCMODE_TIMING;
+  sConfigOC.OCMode = TIM_OCMODE_TOGGLE;
   sConfigOC.Pulse = 0;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
@@ -543,6 +619,7 @@ static void MX_TIM2_Init(void)
   /* USER CODE BEGIN TIM2_Init 2 */
 
   /* USER CODE END TIM2_Init 2 */
+  HAL_TIM_MspPostInit(&htim2);
 
 }
 
@@ -626,7 +703,7 @@ static void MX_UART4_Init(void)
   huart4.Init.WordLength = UART_WORDLENGTH_8B;
   huart4.Init.StopBits = UART_STOPBITS_1;
   huart4.Init.Parity = UART_PARITY_NONE;
-  huart4.Init.Mode = UART_MODE_TX;
+  huart4.Init.Mode = UART_MODE_TX_RX;
   huart4.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   huart4.Init.OverSampling = UART_OVERSAMPLING_16;
   if (HAL_UART_Init(&huart4) != HAL_OK)
@@ -636,6 +713,39 @@ static void MX_UART4_Init(void)
   /* USER CODE BEGIN UART4_Init 2 */
 
   /* USER CODE END UART4_Init 2 */
+
+}
+
+/**
+  * @brief UART5 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_UART5_Init(void)
+{
+
+  /* USER CODE BEGIN UART5_Init 0 */
+
+  /* USER CODE END UART5_Init 0 */
+
+  /* USER CODE BEGIN UART5_Init 1 */
+
+  /* USER CODE END UART5_Init 1 */
+  huart5.Instance = UART5;
+  huart5.Init.BaudRate = 9600;
+  huart5.Init.WordLength = UART_WORDLENGTH_8B;
+  huart5.Init.StopBits = UART_STOPBITS_1;
+  huart5.Init.Parity = UART_PARITY_NONE;
+  huart5.Init.Mode = UART_MODE_TX_RX;
+  huart5.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart5.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN UART5_Init 2 */
+
+  /* USER CODE END UART5_Init 2 */
 
 }
 
@@ -649,9 +759,15 @@ static void MX_DMA_Init(void)
   __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
-  /* DMA1_Stream0_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
+  /* DMA1_Stream4_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
+  /* DMA1_Stream5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+  /* DMA1_Stream7_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream7_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream7_IRQn);
 
 }
 
@@ -673,43 +789,14 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3 
-                          |GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15 
-                          |GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3 
-                          |GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_7, GPIO_PIN_RESET);
-
-  /*Configure GPIO pins : PA0 PA1 PA2 PA3 
-                           PA4 PA5 PA6 PA7 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3 
-                          |GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PD12 PD13 PD14 PD15 
-                           PD0 PD1 PD2 PD3 
-                           PD4 PD5 PD6 PD7 */
-  GPIO_InitStruct.Pin = GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15 
-                          |GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3 
-                          |GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7;
+  /*Configure GPIO pins : PD12 PD13 PD14 PD15 */
+  GPIO_InitStruct.Pin = GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PC7 */
-  GPIO_InitStruct.Pin = GPIO_PIN_7;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PC9 */
   GPIO_InitStruct.Pin = GPIO_PIN_9;
