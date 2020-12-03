@@ -56,6 +56,7 @@ RTC_HandleTypeDef hrtc;
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim5;
 TIM_HandleTypeDef htim8;
 
 UART_HandleTypeDef huart4;
@@ -85,6 +86,21 @@ uint8_t dat_buf[N_BYTES];
 uint8_t lidar_str[N_CHARS_TO_LIDAR];
 
 
+uint8_t soft_rtc_m = 0;
+uint8_t soft_rtc_s = 0;
+uint32_t soft_rtc_subs = 0;
+
+uint8_t soft_rtc_cameras_m = 0;
+uint8_t soft_rtc_cameras_s = 0;
+uint32_t soft_rtc_cameras_subs = 0;
+
+uint8_t soft_rtc_lidar_m = 0;
+uint8_t soft_rtc_lidar_s = 0;
+uint32_t soft_rtc_lidar_subs = 0;
+
+
+
+
 uint32_t some;
 /* USER CODE END PV */
 
@@ -100,6 +116,7 @@ static void MX_RTC_Init(void);
 static void MX_UART4_Init(void);
 static void MX_UART5_Init(void);
 static void MX_TIM8_Init(void);
+static void MX_TIM5_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -233,26 +250,35 @@ void cp() {
 }
 
 void HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
+	if (htim->Instance == htim5.Instance) {
+		soft_rtc_s ++;
+		if (soft_rtc_s == 60) {
+			soft_rtc_s = 0;
+			soft_rtc_m ++;
+			if (soft_rtc_m == 60) {
+				soft_rtc_m = 0;
+			}
+		}
+	}
 	if (htim->Instance == htim1.Instance)
 	{
-		HAL_RTC_GetTime(&hrtc, &sTime_lidar, RTC_FORMAT_BIN);
-		HAL_RTC_GetDate(&hrtc, &sDate_lidar, RTC_FORMAT_BIN);
-		flag_lidar_ts_ready = 1;
-		flag_transmit_to_lidar = 1;
+		if(HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_9)==GPIO_PIN_SET) { // if timer output is HIGH
+			HAL_RTC_GetTime(&hrtc, &sTime_lidar, RTC_FORMAT_BIN);
+			HAL_RTC_GetDate(&hrtc, &sDate_lidar, RTC_FORMAT_BIN);
+			flag_lidar_ts_ready = 1;
+			flag_transmit_to_lidar = 1;
+		}
 	}
 
 	if (htim->Instance == htim2.Instance)
 	{
-		if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5)==GPIO_PIN_SET) {
+		if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5)==GPIO_PIN_SET) { // if timer output is HIGH
 			HAL_RTC_GetTime(&hrtc, &sTime_cam, RTC_FORMAT_BIN);
 			HAL_RTC_GetDate(&hrtc, &sDate_cam, RTC_FORMAT_BIN);
 			flag_cameras_ts_ready = 1;
 		}
 	}
 }
-
-
-
 /* USER CODE END 0 */
 
 /**
@@ -291,6 +317,7 @@ int main(void)
   MX_UART4_Init();
   MX_UART5_Init();
   MX_TIM8_Init();
+  MX_TIM5_Init();
   /* USER CODE BEGIN 2 */
 
   HAL_NVIC_DisableIRQ(EXTI9_5_IRQn);
@@ -301,6 +328,7 @@ int main(void)
 	//HAL_TIM_OC_Start_IT(&htim2, TIM_CHANNEL_1);
 	HAL_TIM_PWM_Start_IT(&htim2, TIM_CHANNEL_1);
 	HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_1);
+	HAL_TIM_OC_Start(&htim5, TIM_CHANNEL_1);
 
 	//Update_event = TIM_CLK/((PSC + 1)*(ARR + 1)*(RCR + 1))
   //TIM_CLK = timer clock input
@@ -308,39 +336,62 @@ int main(void)
   //ARR = 16/32-bit Autoreload register
   //RCR = 16-bit repetition counter
 
-  //76.8 / ((0 + 1) * (1 + 1)) / 2 = 19.2 MHz
-  //76.8 / ((7679 + 1) * (999 + 1)) / 2 = 5 Hz
-  //76.8 / ((7679 + 1) * (4999 + 1)) / 2 = 1 Hz
+  //76.8 / ((0 + 1) * (1 + 1)) / 2 = 19.2 MHz TIM3 IMU
+  //76.8 * 1000000 / ((7679 + 1) * (999 + 1)) / 2 = 5 Hz TIM2 CAMERAS
+	//76.8 * 1000000 / ((7679 + 1) * (4999 + 1)) / 2 = 1 Hz TIM1 LIDAR
+	//76.8 * 1000000 / ((47 + 1) * (4999 + 1)) = 1 Hz TIM5
 
-  //D14 RED
-  //D13 ORANGE
-  //D12  GREEN
-  //D15 BLUE
-  //D5  USB
+/*
+------------|  |------------
+|                          |
+|                          |
+|                          |
+|                          |
+|::                      ::|
+|::                      ::|
+|::                      ::|
+|::                      ::|
+|::                      ::|
+|::                      ::|
+|::                      ::|
+|::      [D13 ORNG]      ::|
+|:: [D12 GRN]  [D14 RED] ::|
+|::      [D15 BLUE]      ::|
+|::                      ::|
+|::                      ::|
+|::             [D5 USB] ::|
+----------------------------
+ */
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-  	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5));
+  	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5)); // forward timer output signal to led pin
+  	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_9)); // forward timer output signal to led pin
+  	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0)); // forward timer output signal to led pin
   	if (flag_read_imu_values == 1) {
 			HAL_NVIC_DisableIRQ(EXTI9_5_IRQn);
 			flag_read_imu_values = 0;
-			HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
+			//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
 			count++;
 			cp();
 			HAL_I2C_Mem_Read_DMA(&hi2c1, 0x68<<1, 59, 1, dat, 14);
 			buf_flag_cameras_ts_ready = flag_cameras_ts_ready;
 			buf_flag_lidar_ts_ready = flag_lidar_ts_ready;
+
 			uint8_t mes_length = N_IMU_CHARS + buf_flag_cameras_ts_ready * N_CAMERAS_CHARS + buf_flag_lidar_ts_ready * N_LIDAR_CHARS;
 			make_message();
 			HAL_UART_Transmit_DMA(&huart4, str, mes_length);//, 1000);	//HAL_UART_Transmit_DMA(&huart4, str, N_CHARS);
+
 			delay(6000);
-			if(count & 256) { HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_15);}
+			//if(count & 1024) { HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_15);}
 			if(__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_9) != RESET) {__HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_9);}
 			HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
-			HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);
+			//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);
+
 			if (buf_flag_cameras_ts_ready == 1) {
 				flag_cameras_ts_ready = 0;
 			}
@@ -669,6 +720,66 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 2 */
   HAL_TIM_MspPostInit(&htim3);
+
+}
+
+/**
+  * @brief TIM5 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM5_Init(void)
+{
+
+  /* USER CODE BEGIN TIM5_Init 0 */
+
+  /* USER CODE END TIM5_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM5_Init 1 */
+
+  /* USER CODE END TIM5_Init 1 */
+  htim5.Instance = TIM5;
+  htim5.Init.Prescaler = 3-1;
+  htim5.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim5.Init.Period = 25600000 - 1;
+  htim5.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim5.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim5, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_OC_Init(&htim5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim5, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_TOGGLE;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_OC_ConfigChannel(&htim5, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  __HAL_TIM_ENABLE_OCxPRELOAD(&htim5, TIM_CHANNEL_1);
+  /* USER CODE BEGIN TIM5_Init 2 */
+
+  /* USER CODE END TIM5_Init 2 */
+  HAL_TIM_MspPostInit(&htim5);
 
 }
 
