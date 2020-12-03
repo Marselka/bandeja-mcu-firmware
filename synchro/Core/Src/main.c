@@ -33,9 +33,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define N_IMU_CHARS 53
-#define N_CAMERAS_CHARS 13
-#define N_LIDAR_CHARS 13
+#define N_IMU_CHARS 57
+#define N_CAMERAS_CHARS 17
+#define N_LIDAR_CHARS 17
 #define N_CHARS (N_IMU_CHARS + N_CAMERAS_CHARS + N_LIDAR_CHARS)
 
 #define N_CHARS_TO_LIDAR 66
@@ -86,14 +86,22 @@ uint8_t dat_buf[N_BYTES];
 uint8_t lidar_str[N_CHARS_TO_LIDAR];
 
 
+uint8_t soft_rtc_h = 0;
 uint8_t soft_rtc_m = 0;
 uint8_t soft_rtc_s = 0;
 uint32_t soft_rtc_subs = 0;
 
+uint8_t soft_rtc_imu_h = 0;
+uint8_t soft_rtc_imu_m = 0;
+uint8_t soft_rtc_imu_s = 0;
+uint32_t soft_rtc_imu_subs = 0;
+
+uint8_t soft_rtc_cameras_h = 0;
 uint8_t soft_rtc_cameras_m = 0;
 uint8_t soft_rtc_cameras_s = 0;
 uint32_t soft_rtc_cameras_subs = 0;
 
+uint8_t soft_rtc_lidar_h = 0;
 uint8_t soft_rtc_lidar_m = 0;
 uint8_t soft_rtc_lidar_s = 0;
 uint32_t soft_rtc_lidar_subs = 0;
@@ -138,13 +146,20 @@ int _write(int file,char *ptr, int len) {
   return len;
 }
 
+uint32_t read_TIM5() {
+  return TIM5->CNT;
+}
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	//HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
   if(GPIO_Pin == GPIO_PIN_9)
   {
   	flag_read_imu_values = 1;
-		HAL_RTC_GetTime(&hrtc, &sTime_imu, RTC_FORMAT_BIN);
-		HAL_RTC_GetDate(&hrtc, &sDate_imu, RTC_FORMAT_BIN);
+  	soft_rtc_imu_subs = read_TIM5();
+		soft_rtc_imu_s = soft_rtc_s;
+		soft_rtc_imu_m = soft_rtc_m;
+		//HAL_RTC_GetTime(&hrtc, &sTime_imu, RTC_FORMAT_BIN);
+		//HAL_RTC_GetDate(&hrtc, &sDate_imu, RTC_FORMAT_BIN);
 		//HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
 		HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
   }
@@ -163,14 +178,17 @@ void setup_mpu(void) {
 void make_message(void) {
 	sprintf(str,
 		"i0"																				//2
-		"%02x %02x %04x " 													//11
+		"%02x %02x %08x " 													//15
 		"%04x %04x %04x %04x %04x %04x %04x "			 	//35
 		"%04x"																			//4
 		"\n", 																			//1
-																								//=53
-		(uint8_t)(sTime_imu.Minutes),
-		(uint8_t)(sTime_imu.Seconds),
-		(uint16_t)(sTime_imu.SubSeconds),
+																								//=57
+		(uint8_t)soft_rtc_imu_m,
+		(uint8_t)soft_rtc_imu_s,
+		(uint32_t)soft_rtc_imu_subs,
+		//(uint8_t)(sTime_imu.Minutes),
+		//(uint8_t)(sTime_imu.Seconds),
+		//(uint16_t)(sTime_imu.SubSeconds),
 
 		(uint16_t)(dat_buf[0]<<8 | dat_buf[1]),
 		(uint16_t)(dat_buf[2]<<8 | dat_buf[3]),
@@ -184,23 +202,29 @@ void make_message(void) {
 	if (buf_flag_cameras_ts_ready == 1) {
 		sprintf(str + N_IMU_CHARS,
 				"c0"																				//2
-				"%02x %02x %04x"	 													//10
+				"%02x %02x %08x"	 													//14
 				"\n", 																			//1
-																										//=13
-				(uint8_t)(sTime_cam.Minutes),
-				(uint8_t)(sTime_cam.Seconds),
-				(uint16_t)(sTime_cam.SubSeconds)
+																										//=17
+				(uint8_t)soft_rtc_cameras_m,
+				(uint8_t)soft_rtc_cameras_s,
+				(uint32_t)soft_rtc_cameras_subs
+				//(uint8_t)(sTime_cam.Minutes),
+				//(uint8_t)(sTime_cam.Seconds),
+				//(uint16_t)(sTime_cam.SubSeconds)
 			);
 	}
 	if (buf_flag_lidar_ts_ready == 1) {
 		sprintf(str + N_IMU_CHARS + buf_flag_cameras_ts_ready * N_CAMERAS_CHARS,
 				"l0"																				//2
-				"%02x %02x %04x"	 													//10
+				"%02x %02x %08x"	 													//14
 				"\n", 																			//1
-																										//=13
-				(uint8_t)(sTime_lidar.Minutes),
-				(uint8_t)(sTime_lidar.Seconds),
-				(uint16_t)(sTime_lidar.SubSeconds)
+																										//=17
+				(uint8_t)soft_rtc_lidar_m,
+				(uint8_t)soft_rtc_lidar_s,
+				(uint32_t)soft_rtc_lidar_subs
+				//(uint8_t)(sTime_lidar.Minutes),
+				//(uint8_t)(sTime_lidar.Seconds),
+				//(uint16_t)(sTime_lidar.SubSeconds)
 			);
 	}
 
@@ -224,9 +248,13 @@ void make_lidar_string(void) {
 																													//=66
 		//".%04d"																								//5
 
-		(uint8_t)(sTime_lidar.Hours),
-		(uint8_t)(sTime_lidar.Minutes),
-		(uint8_t)(sTime_lidar.Seconds)
+		(uint8_t)soft_rtc_lidar_h,
+		(uint8_t)soft_rtc_lidar_m,
+		(uint8_t)soft_rtc_lidar_s
+		//(uint32_t)soft_rtc_lidar_subs
+		//(uint8_t)(sTime_lidar.Hours),
+		//(uint8_t)(sTime_lidar.Minutes),
+		//(uint8_t)(sTime_lidar.Seconds)
 		//(uint16_t)(sTime_lidar.SubSeconds)
 	);
 
@@ -257,14 +285,23 @@ void HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
 			soft_rtc_m ++;
 			if (soft_rtc_m == 60) {
 				soft_rtc_m = 0;
+				soft_rtc_h ++;
+				if (soft_rtc_h == 24) {
+					soft_rtc_h = 0;
+				}
 			}
 		}
 	}
 	if (htim->Instance == htim1.Instance)
 	{
 		if(HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_9)==GPIO_PIN_SET) { // if timer output is HIGH
-			HAL_RTC_GetTime(&hrtc, &sTime_lidar, RTC_FORMAT_BIN);
-			HAL_RTC_GetDate(&hrtc, &sDate_lidar, RTC_FORMAT_BIN);
+
+			soft_rtc_lidar_subs = read_TIM5();
+			soft_rtc_lidar_s = soft_rtc_s;
+			soft_rtc_lidar_m = soft_rtc_m;
+
+			//HAL_RTC_GetTime(&hrtc, &sTime_lidar, RTC_FORMAT_BIN);
+			//HAL_RTC_GetDate(&hrtc, &sDate_lidar, RTC_FORMAT_BIN);
 			flag_lidar_ts_ready = 1;
 			flag_transmit_to_lidar = 1;
 		}
@@ -273,8 +310,13 @@ void HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
 	if (htim->Instance == htim2.Instance)
 	{
 		if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5)==GPIO_PIN_SET) { // if timer output is HIGH
-			HAL_RTC_GetTime(&hrtc, &sTime_cam, RTC_FORMAT_BIN);
-			HAL_RTC_GetDate(&hrtc, &sDate_cam, RTC_FORMAT_BIN);
+
+			soft_rtc_cameras_subs = read_TIM5();
+			soft_rtc_cameras_s = soft_rtc_s;
+			soft_rtc_cameras_m = soft_rtc_m;
+
+			//HAL_RTC_GetTime(&hrtc, &sTime_cam, RTC_FORMAT_BIN);
+			//HAL_RTC_GetDate(&hrtc, &sDate_cam, RTC_FORMAT_BIN);
 			flag_cameras_ts_ready = 1;
 		}
 	}
@@ -325,10 +367,9 @@ int main(void)
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
 	HAL_TIM_OC_Start_IT(&htim1, TIM_CHANNEL_1);
-	//HAL_TIM_OC_Start_IT(&htim2, TIM_CHANNEL_1);
 	HAL_TIM_PWM_Start_IT(&htim2, TIM_CHANNEL_1);
 	HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_1);
-	HAL_TIM_OC_Start(&htim5, TIM_CHANNEL_1);
+	HAL_TIM_OC_Start_IT(&htim5, TIM_CHANNEL_1);
 
 	//Update_event = TIM_CLK/((PSC + 1)*(ARR + 1)*(RCR + 1))
   //TIM_CLK = timer clock input
@@ -337,12 +378,11 @@ int main(void)
   //RCR = 16-bit repetition counter
 
   //76.8 / ((0 + 1) * (1 + 1)) / 2 = 19.2 MHz TIM3 IMU
-  //76.8 * 1000000 / ((7679 + 1) * (999 + 1)) / 2 = 5 Hz TIM2 CAMERAS
-	//76.8 * 1000000 / ((7679 + 1) * (4999 + 1)) / 2 = 1 Hz TIM1 LIDAR
-	//76.8 * 1000000 / ((47 + 1) * (4999 + 1)) = 1 Hz TIM5
+  //76.8 * 1000000 / ((7680 - 1 + 1) * (1000 - 1 + 1)) / 2 = 5 Hz TIM2 CAMERAS
+	//76.8 * 1000000 / ((7680 - 1 + 1) * (5000 - 1 + 1)) / 2 = 1 Hz TIM1 LIDAR
+	//76.8 * 1000000 / ((3 - 1 + 1) * (25600000 - 1 + 1)) = 1 Hz TIM5
 
-/*
-------------|  |------------
+/*----------|  |------------
 |                          |
 |                          |
 |                          |
@@ -360,8 +400,7 @@ int main(void)
 |::                      ::|
 |::                      ::|
 |::             [D5 USB] ::|
-----------------------------
- */
+--------------------------*/
 
   /* USER CODE END 2 */
 
@@ -369,28 +408,30 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-  	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5)); // forward timer output signal to led pin
-  	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_9)); // forward timer output signal to led pin
-  	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0)); // forward timer output signal to led pin
+  	//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5)); // forward timer output signal to led pin
+  	//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_9)); // forward timer output signal to led pin
+  	//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0)); // forward timer output signal to led pin
   	if (flag_read_imu_values == 1) {
 			HAL_NVIC_DisableIRQ(EXTI9_5_IRQn);
 			flag_read_imu_values = 0;
-			//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
+			HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
 			count++;
 			cp();
 			HAL_I2C_Mem_Read_DMA(&hi2c1, 0x68<<1, 59, 1, dat, 14);
 			buf_flag_cameras_ts_ready = flag_cameras_ts_ready;
 			buf_flag_lidar_ts_ready = flag_lidar_ts_ready;
 
+			HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
 			uint8_t mes_length = N_IMU_CHARS + buf_flag_cameras_ts_ready * N_CAMERAS_CHARS + buf_flag_lidar_ts_ready * N_LIDAR_CHARS;
 			make_message();
 			HAL_UART_Transmit_DMA(&huart4, str, mes_length);//, 1000);	//HAL_UART_Transmit_DMA(&huart4, str, N_CHARS);
+			HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
 
-			delay(6000);
+			delay(7000);
 			//if(count & 1024) { HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_15);}
 			if(__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_9) != RESET) {__HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_9);}
 			HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
-			//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);
 
 			if (buf_flag_cameras_ts_ready == 1) {
 				flag_cameras_ts_ready = 0;
@@ -447,7 +488,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
   {
