@@ -33,9 +33,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define N_IMU_CHARS 57
-#define N_CAMERAS_CHARS 17
-#define N_LIDAR_CHARS 17
+#define N_IMU_CHARS 58
+#define N_CAMERAS_CHARS 18
+#define N_LIDAR_CHARS 18
 #define N_CHARS (N_IMU_CHARS + N_CAMERAS_CHARS + N_LIDAR_CHARS)
 
 #define N_CHARS_TO_LIDAR 66
@@ -178,14 +178,15 @@ void setup_mpu(void) {
 void make_message(void) {
 	sprintf(str,
 		"i0"																				//2
-		"%02x %02x %08x " 													//15
+		"%02x %02x %04x %04x "											//16
 		"%04x %04x %04x %04x %04x %04x %04x "			 	//35
 		"%04x"																			//4
 		"\n", 																			//1
-																								//=57
+																								//=58
 		(uint8_t)soft_rtc_imu_m,
 		(uint8_t)soft_rtc_imu_s,
-		(uint32_t)soft_rtc_imu_subs,
+		(uint16_t)(soft_rtc_imu_subs>>16),
+		(uint16_t)(soft_rtc_imu_subs),
 		//(uint8_t)(sTime_imu.Minutes),
 		//(uint8_t)(sTime_imu.Seconds),
 		//(uint16_t)(sTime_imu.SubSeconds),
@@ -202,12 +203,13 @@ void make_message(void) {
 	if (buf_flag_cameras_ts_ready == 1) {
 		sprintf(str + N_IMU_CHARS,
 				"c0"																				//2
-				"%02x %02x %08x"	 													//14
+				"%02x %02x %04x %04x"	 										//15
 				"\n", 																			//1
-																										//=17
+																										//=18
 				(uint8_t)soft_rtc_cameras_m,
 				(uint8_t)soft_rtc_cameras_s,
-				(uint32_t)soft_rtc_cameras_subs
+				(uint16_t)(soft_rtc_cameras_subs>>16),
+				(uint16_t)(soft_rtc_cameras_subs)
 				//(uint8_t)(sTime_cam.Minutes),
 				//(uint8_t)(sTime_cam.Seconds),
 				//(uint16_t)(sTime_cam.SubSeconds)
@@ -216,12 +218,13 @@ void make_message(void) {
 	if (buf_flag_lidar_ts_ready == 1) {
 		sprintf(str + N_IMU_CHARS + buf_flag_cameras_ts_ready * N_CAMERAS_CHARS,
 				"l0"																				//2
-				"%02x %02x %08x"	 													//14
+				"%02x %02x %04x %04x"											//15
 				"\n", 																			//1
-																										//=17
+																										//=18
 				(uint8_t)soft_rtc_lidar_m,
 				(uint8_t)soft_rtc_lidar_s,
-				(uint32_t)soft_rtc_lidar_subs
+				(uint16_t)(soft_rtc_lidar_subs>>16),
+				(uint16_t)(soft_rtc_lidar_subs)
 				//(uint8_t)(sTime_lidar.Minutes),
 				//(uint8_t)(sTime_lidar.Seconds),
 				//(uint16_t)(sTime_lidar.SubSeconds)
