@@ -188,10 +188,8 @@ void make_message(void) {
 																								//=58
 		(uint8_t)soft_rtc_imu_m,
 		(uint8_t)soft_rtc_imu_s,
-		//(uint16_t)(soft_rtc_imu_subs>>16),
-		//(uint16_t)(soft_rtc_imu_subs),
-		(uint16_t)(TIM2->CCR1>>16),
-		(uint16_t)(TIM2->CCR1),
+		(uint16_t)(soft_rtc_imu_subs>>16),
+		(uint16_t)(soft_rtc_imu_subs),
 		//(uint8_t)(sTime_imu.Minutes),
 		//(uint8_t)(sTime_imu.Seconds),
 		//(uint16_t)(sTime_imu.SubSeconds),
@@ -469,7 +467,7 @@ int main(void)
 				flag_alignment_received = 0;
 				//alignment_subs_buf = alignment_subs;
 				do_alignment();
-				TIM2->CCR1 = 1920000;//alignment_subs;
+				TIM2->CCR1 = 3840000;//alignment_subs;
 				//sConfigOC.Pulse = 1280000;
 				HAL_UART_Receive_DMA(&huart4, &alignment_subs, 4);
 
