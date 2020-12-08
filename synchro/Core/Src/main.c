@@ -77,6 +77,7 @@ uint8_t flag_cameras_ts_ready = 0;
 uint8_t buf_flag_cameras_ts_ready = 0;
 uint8_t buf_flag_lidar_ts_ready = 0;
 
+uint8_t flag_alignment_received = 0;
 
 RTC_TimeTypeDef sTime_imu = {0}, sTime_cam = {0}, sTime_lidar = {0};
 RTC_DateTypeDef sDate_imu = {0}, sDate_cam = {0}, sDate_lidar = {0};
@@ -109,7 +110,8 @@ uint32_t soft_rtc_lidar_subs = 0;
 
 uint8_t str20[10] = "000_000\n";
 
-uint32_t alignment_subs = ('\n'<<24 | 'c'<<16 | 'b'<<8 | 'a');
+uint32_t alignment_subs = 0;//('\n'<<24 | 'c'<<16 | 'b'<<8 | 'a');
+uint32_t alignment_subs_buf = 0;//('\n'<<24 | 'c'<<16 | 'b'<<8 | 'a');
 
 /* USER CODE END PV */
 
@@ -186,8 +188,10 @@ void make_message(void) {
 																								//=58
 		(uint8_t)soft_rtc_imu_m,
 		(uint8_t)soft_rtc_imu_s,
-		(uint16_t)(soft_rtc_imu_subs>>16),
-		(uint16_t)(soft_rtc_imu_subs),
+		//(uint16_t)(soft_rtc_imu_subs>>16),
+		//(uint16_t)(soft_rtc_imu_subs),
+		(uint16_t)(TIM2->CCR1>>16),
+		(uint16_t)(TIM2->CCR1),
 		//(uint8_t)(sTime_imu.Minutes),
 		//(uint8_t)(sTime_imu.Seconds),
 		//(uint16_t)(sTime_imu.SubSeconds),
@@ -325,6 +329,17 @@ void HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
 		}
 	}
 }
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance == UART4) {
+    	//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, SET);
+    	flag_alignment_received = 1;
+    }
+}
+
+void do_alignment(void) {
+	;
+}
 /* USER CODE END 0 */
 
 /**
@@ -370,10 +385,13 @@ int main(void)
   setup_mpu();
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
-	HAL_TIM_OC_Start_IT(&htim1, TIM_CHANNEL_1);
-	HAL_TIM_PWM_Start_IT(&htim2, TIM_CHANNEL_1);
-	HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_1);
 	HAL_TIM_OC_Start_IT(&htim5, TIM_CHANNEL_1);
+	delay(10);
+	HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_1);
+	delay(10);
+	HAL_TIM_OC_Start_IT(&htim2, TIM_CHANNEL_1);
+	delay(10);
+	HAL_TIM_OC_Start_IT(&htim1, TIM_CHANNEL_1);
 
 	//Update_event = TIM_CLK/((PSC + 1)*(ARR + 1)*(RCR + 1))
   //TIM_CLK = timer clock input
@@ -415,9 +433,9 @@ int main(void)
   	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5)); // forward timer output signal to led pin
   	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_9)); // forward timer output signal to led pin
   	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0)); // forward timer output signal to led pin
-  	if ((uint8_t)(alignment_subs) == '\n') {
-  		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
-  	}
+  	//if ((uint8_t)(alignment_subs) == '\n') {
+  	//	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
+  	//}
   	if (flag_read_imu_values == 1) {
 			HAL_NVIC_DisableIRQ(EXTI9_5_IRQn);
 			flag_read_imu_values = 0;
@@ -447,11 +465,16 @@ int main(void)
 			if (buf_flag_lidar_ts_ready == 1) {
 				flag_lidar_ts_ready = 0;
 			}
-			if (alignment_subs != 0) {
-				//do smth
-				alignment_subs = 0;
+			if (flag_alignment_received == 1) {
+				flag_alignment_received = 0;
+				//alignment_subs_buf = alignment_subs;
+				do_alignment();
+				TIM2->CCR1 = 1920000;//alignment_subs;
+				//sConfigOC.Pulse = 1280000;
+				HAL_UART_Receive_DMA(&huart4, &alignment_subs, 4);
+
 			}
-			HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, __HAL_UART_GET_FLAG(&huart4, UART_FLAG_RXNE));
+			//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, __HAL_UART_GET_FLAG(&huart4, UART_FLAG_RXNE));
 		}
   	if (flag_transmit_to_lidar==1) {
   		flag_transmit_to_lidar = 0;
@@ -678,9 +701,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 240-1;
+  htim2.Init.Prescaler = 1-1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 64000-1;
+  htim2.Init.Period = 7680000-1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -692,7 +715,7 @@ static void MX_TIM2_Init(void)
   {
     Error_Handler();
   }
-  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
+  if (HAL_TIM_OC_Init(&htim2) != HAL_OK)
   {
     Error_Handler();
   }
@@ -702,11 +725,11 @@ static void MX_TIM2_Init(void)
   {
     Error_Handler();
   }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 20000;
+  sConfigOC.OCMode = TIM_OCMODE_TOGGLE;
+  sConfigOC.Pulse = 0;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_LOW;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  if (HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
   }
