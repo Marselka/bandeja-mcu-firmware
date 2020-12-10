@@ -108,10 +108,7 @@ uint8_t soft_rtc_lidar_m = 0;
 uint8_t soft_rtc_lidar_s = 0;
 uint32_t soft_rtc_lidar_subs = 0;
 
-uint8_t str20[10] = "000_000\n";
-
-uint32_t alignment_subs = 0;//('\n'<<24 | 'c'<<16 | 'b'<<8 | 'a');
-uint32_t alignment_subs_buf = 0;//('\n'<<24 | 'c'<<16 | 'b'<<8 | 'a');
+uint32_t alignment_subs = 0;
 
 /* USER CODE END PV */
 
@@ -335,9 +332,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     }
 }
 
-void do_alignment(void) {
-	;
-}
 /* USER CODE END 0 */
 
 /**
@@ -430,7 +424,7 @@ int main(void)
   {
   	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5)); // forward timer output signal to led pin
   	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_9)); // forward timer output signal to led pin
-  	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0)); // forward timer output signal to led pin
+  	//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0)); // forward timer output signal to led pin
   	//if ((uint8_t)(alignment_subs) == '\n') {
   	//	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
   	//}
@@ -465,12 +459,9 @@ int main(void)
 			}
 			if (flag_alignment_received == 1) {
 				flag_alignment_received = 0;
-				//alignment_subs_buf = alignment_subs;
-				do_alignment();
-				TIM2->CCR1 = 3840000;//alignment_subs;
-				//sConfigOC.Pulse = 1280000;
+				TIM2->CCR1 = alignment_subs;
 				HAL_UART_Receive_DMA(&huart4, &alignment_subs, 4);
-
+				HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_15);
 			}
 			//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, __HAL_UART_GET_FLAG(&huart4, UART_FLAG_RXNE));
 		}
