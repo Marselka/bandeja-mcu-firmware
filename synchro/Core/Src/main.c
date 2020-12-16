@@ -109,6 +109,8 @@ uint8_t soft_rtc_lidar_s = 0;
 uint32_t soft_rtc_lidar_subs = 0;
 
 uint32_t alignment_subs = 0;
+uint32_t alignment_subs_received = 0;
+uint32_t tim2_counter_per = 0;
 
 /* USER CODE END PV */
 
@@ -295,7 +297,7 @@ void HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
 			}
 		}
 	}
-	if (htim->Instance == htim1.Instance)
+	else if (htim->Instance == htim1.Instance)
 	{
 		if(HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_9)==GPIO_PIN_SET) { // if timer output is HIGH
 
@@ -309,8 +311,7 @@ void HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
 			flag_transmit_to_lidar = 1;
 		}
 	}
-
-	if (htim->Instance == htim2.Instance)
+	else if (htim->Instance == htim2.Instance)
 	{
 		if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5)==GPIO_PIN_SET) { // if timer output is HIGH
 
@@ -332,6 +333,17 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     }
 }
 
+void receive_alignment(void) {
+	HAL_UART_Receive_DMA(&huart4, &alignment_subs_received, 4);
+}
+
+void align_timer(void) {
+	alignment_subs += alignment_subs_received; // must not overfill uint32_t
+	while (alignment_subs >= tim2_counter_per) {
+		alignment_subs -= tim2_counter_per;
+	}
+	TIM2->CCR1 = alignment_subs;
+}
 /* USER CODE END 0 */
 
 /**
@@ -415,7 +427,7 @@ int main(void)
 |::                      ::|
 |::             [D5 USB] ::|
 --------------------------*/
-	HAL_UART_Receive_DMA(&huart4, &alignment_subs, 4);
+	receive_alignment();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -459,8 +471,8 @@ int main(void)
 			}
 			if (flag_alignment_received == 1) {
 				flag_alignment_received = 0;
-				TIM2->CCR1 = alignment_subs;
-				HAL_UART_Receive_DMA(&huart4, &alignment_subs, 4);
+				align_timer();
+				receive_alignment();
 				HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_15);
 			}
 			//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, __HAL_UART_GET_FLAG(&huart4, UART_FLAG_RXNE));
@@ -692,9 +704,9 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 1-1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 7680000-1;
+  htim2.Init.Period = 15360000-1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
   {
     Error_Handler();
@@ -704,7 +716,7 @@ static void MX_TIM2_Init(void)
   {
     Error_Handler();
   }
-  if (HAL_TIM_OC_Init(&htim2) != HAL_OK)
+  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
   {
     Error_Handler();
   }
@@ -714,16 +726,17 @@ static void MX_TIM2_Init(void)
   {
     Error_Handler();
   }
-  sConfigOC.OCMode = TIM_OCMODE_TOGGLE;
-  sConfigOC.Pulse = 0;
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 7680000;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_LOW;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_OC_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
   }
   /* USER CODE BEGIN TIM2_Init 2 */
-
+  alignment_subs = sConfigOC.Pulse;
+  tim2_counter_per = htim2.Init.Period;
   /* USER CODE END TIM2_Init 2 */
   HAL_TIM_MspPostInit(&htim2);
 
