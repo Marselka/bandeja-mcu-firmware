@@ -40,6 +40,8 @@
 
 #define N_CHARS_TO_LIDAR 66
 #define N_BYTES 16
+
+#define ALIGN_SUBS_INTERVAL 256 // = 1/6 * htim2.Init.Period
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -109,6 +111,8 @@ uint8_t soft_rtc_lidar_s = 0;
 uint32_t soft_rtc_lidar_subs = 0;
 
 uint32_t alignment_subs = 0;
+uint32_t alignment_subs_low = 0;
+uint32_t alignment_subs_high = 0;
 uint32_t alignment_subs_received = 0;
 uint32_t tim2_counter_per = 0;
 
@@ -339,10 +343,11 @@ void receive_alignment(void) {
 
 void align_timer(void) {
 	alignment_subs += alignment_subs_received; // must not overfill uint32_t
-	while (alignment_subs >= tim2_counter_per) {
-		alignment_subs -= tim2_counter_per;
+	while (alignment_subs >= alignment_subs_high) {
+		alignment_subs -= ALIGN_SUBS_INTERVAL;
 	}
-	TIM2->CCR1 = alignment_subs;
+	//TIM2->CCR1 = alignment_subs;
+	TIM2->CCR1 = alignment_subs_received;
 }
 /* USER CODE END 0 */
 
@@ -703,7 +708,7 @@ static void MX_TIM2_Init(void)
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 1-1;
-  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_DOWN;
   htim2.Init.Period = 15360000-1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
@@ -728,13 +733,15 @@ static void MX_TIM2_Init(void)
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
   sConfigOC.Pulse = 7680000;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_LOW;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
   }
   /* USER CODE BEGIN TIM2_Init 2 */
+  alignment_subs_low = sConfigOC.Pulse;
+  alignment_subs_high = alignment_subs_low + ALIGN_SUBS_INTERVAL;
   alignment_subs = sConfigOC.Pulse;
   tim2_counter_per = htim2.Init.Period;
   /* USER CODE END TIM2_Init 2 */
