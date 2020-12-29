@@ -41,7 +41,7 @@
 #define N_CHARS_TO_LIDAR 66
 #define N_BYTES 16
 
-#define ALIGN_SUBS_INTERVAL 256 // = 1/6 * htim2.Init.Period
+#define ALIGN_SUBS_INTERVAL 2560000 // = 1/6 * htim2.Init.Period
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -110,7 +110,7 @@ uint8_t soft_rtc_lidar_m = 0;
 uint8_t soft_rtc_lidar_s = 0;
 uint32_t soft_rtc_lidar_subs = 0;
 
-uint32_t alignment_subs = 0;
+int32_t alignment_subs_signed = 0;
 uint32_t alignment_subs_low = 0;
 uint32_t alignment_subs_high = 0;
 uint32_t alignment_subs_received = 0;
@@ -317,7 +317,7 @@ void HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
 	}
 	else if (htim->Instance == htim2.Instance)
 	{
-		if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5)==GPIO_PIN_SET) { // if timer output is HIGH
+		if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5)==GPIO_PIN_RESET) { // if timer output is HIGH // is not needed
 
 			soft_rtc_cameras_subs = read_TIM5();
 			soft_rtc_cameras_s = soft_rtc_s;
@@ -342,12 +342,11 @@ void receive_alignment(void) {
 }
 
 void align_timer(void) {
-	alignment_subs += alignment_subs_received; // must not overfill uint32_t
-	while (alignment_subs >= alignment_subs_high) {
-		alignment_subs -= ALIGN_SUBS_INTERVAL;
+	alignment_subs_signed -= (int32_t)alignment_subs_received; // must not overfill uint32_t
+	while (alignment_subs_signed < (int32_t)alignment_subs_low) {
+		alignment_subs_signed += ALIGN_SUBS_INTERVAL;
 	}
-	//TIM2->CCR1 = alignment_subs;
-	TIM2->CCR1 = alignment_subs_received;
+	TIM2->CCR1 = (uint32_t)alignment_subs_signed;
 }
 /* USER CODE END 0 */
 
@@ -442,9 +441,6 @@ int main(void)
   	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5)); // forward timer output signal to led pin
   	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_9)); // forward timer output signal to led pin
   	//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0)); // forward timer output signal to led pin
-  	//if ((uint8_t)(alignment_subs) == '\n') {
-  	//	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
-  	//}
   	if (flag_read_imu_values == 1) {
 			HAL_NVIC_DisableIRQ(EXTI9_5_IRQn);
 			flag_read_imu_values = 0;
@@ -733,7 +729,7 @@ static void MX_TIM2_Init(void)
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
   sConfigOC.Pulse = 7680000;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_LOW;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
   {
@@ -741,8 +737,8 @@ static void MX_TIM2_Init(void)
   }
   /* USER CODE BEGIN TIM2_Init 2 */
   alignment_subs_low = sConfigOC.Pulse;
-  alignment_subs_high = alignment_subs_low + ALIGN_SUBS_INTERVAL;
-  alignment_subs = sConfigOC.Pulse;
+  alignment_subs_high = alignment_subs_low + ALIGN_SUBS_INTERVAL; //must be lower than htim2.Init.Period
+  alignment_subs_signed = (int32_t)(sConfigOC.Pulse);
   tim2_counter_per = htim2.Init.Period;
   /* USER CODE END TIM2_Init 2 */
   HAL_TIM_MspPostInit(&htim2);
