@@ -42,6 +42,10 @@
 #define N_BYTES 16
 
 #define ALIGN_SUBS_INTERVAL 2560000 // = 1/6 * htim2.Init.Period
+
+#define INPUT_PC_DATA_LENGTH 5
+#define ALIGN_FRAMES_CMD 34
+#define START_TRIGGER_CMD 56
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -116,10 +120,16 @@ uint32_t alignment_subs_high = 0;
 uint32_t alignment_subs_received = 0;
 uint32_t tim2_counter_per = 0;
 
-uint8_t some_buf[5];
+uint8_t input_buf[INPUT_PC_DATA_LENGTH];
 uint8_t some_cmd;
 uint32_t some_data;
-uint8_t flag_some;
+uint8_t flag_data_received_from_pc;
+
+typedef struct {
+	uint8_t cmd;
+	uint32_t data;
+} received_tuple;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -337,15 +347,22 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == UART4) {
     	//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, SET);
     	//flag_alignment_received = 1;
-    	flag_some = 1;
+    	flag_data_received_from_pc = 1;
     }
 }
 
-void receive_alignment(void) {
-	HAL_UART_Receive_DMA(&huart4, &alignment_subs_received, 4);
+//void receive_alignment(void) {
+//	HAL_UART_Receive_DMA(&huart4, &alignment_subs_received, 4);
+//}
+void receive_from_pc(void) {
+	HAL_UART_Receive_DMA(&huart4, input_buf, INPUT_PC_DATA_LENGTH);
 }
-void receive_some(void) {
-	HAL_UART_Receive_DMA(&huart4, some_buf, 5);
+
+received_tuple parse_data(void) {
+	received_tuple received;
+	received.cmd = input_buf[0];
+	received.data = (uint32_t)(input_buf[1] | input_buf[2] << 8 | input_buf[3] << 16 | input_buf[4] << 24);
+	return received;
 }
 
 /*void align_timer(void) {
@@ -446,7 +463,7 @@ int main(void)
 |::             [D5 USB] ::|
 --------------------------*/
 	//receive_alignment();
-	receive_some();
+	receive_from_pc();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -485,16 +502,24 @@ int main(void)
 			if (buf_flag_lidar_ts_ready == 1) {
 				flag_lidar_ts_ready = 0;
 			}
-			if (flag_alignment_received == 1) {
+			/*if (flag_alignment_received == 1) {
 				flag_alignment_received = 0;
 				align_timer();
 				receive_alignment();
 				HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_15);
-			}
-			if (flag_some == 1) {
-				//HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_15);
-				HAL_TIM_OC_Start_IT(&htim2, TIM_CHANNEL_1);
-				flag_some = 0;
+			}*/
+			if (flag_data_received_from_pc == 1) {
+				received_tuple received = parse_data();
+				if (received.cmd == START_TRIGGER_CMD) {
+					HAL_TIM_OC_Start_IT(&htim2, TIM_CHANNEL_1);
+				}
+				else if (received.cmd == ALIGN_FRAMES_CMD) {
+					alignment_subs_received = received.data;
+					align_timer();
+					HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_15);
+				}
+				flag_data_received_from_pc = 0;
+				receive_from_pc();
 			}
 			//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, __HAL_UART_GET_FLAG(&huart4, UART_FLAG_RXNE));
 		}
