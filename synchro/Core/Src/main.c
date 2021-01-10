@@ -116,6 +116,10 @@ uint32_t alignment_subs_high = 0;
 uint32_t alignment_subs_received = 0;
 uint32_t tim2_counter_per = 0;
 
+uint8_t some_buf[5];
+uint8_t some_cmd;
+uint32_t some_data;
+uint8_t flag_some;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -236,7 +240,6 @@ void make_message(void) {
 				//(uint16_t)(sTime_lidar.SubSeconds)
 			);
 	}
-
 }
 
 uint8_t checksum(char * s, uint8_t start, uint8_t end) {
@@ -333,18 +336,29 @@ void HAL_TIM_OC_DelayElapsedCallback(TIM_HandleTypeDef *htim) {
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == UART4) {
     	//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, SET);
-    	flag_alignment_received = 1;
+    	//flag_alignment_received = 1;
+    	flag_some = 1;
     }
 }
 
 void receive_alignment(void) {
 	HAL_UART_Receive_DMA(&huart4, &alignment_subs_received, 4);
 }
+void receive_some(void) {
+	HAL_UART_Receive_DMA(&huart4, some_buf, 5);
+}
 
-void align_timer(void) {
+/*void align_timer(void) {
 	alignment_subs_signed -= (int32_t)alignment_subs_received; // must not overfill uint32_t
 	while (alignment_subs_signed < (int32_t)alignment_subs_low) {
 		alignment_subs_signed += ALIGN_SUBS_INTERVAL;
+	}
+	TIM2->CCR1 = (uint32_t)alignment_subs_signed;
+}*/
+void align_timer(void) {
+	alignment_subs_signed -= (int32_t)alignment_subs_received; // must not overfill uint32_t
+	while (alignment_subs_signed < 0) {
+		alignment_subs_signed += 15355200;
 	}
 	TIM2->CCR1 = (uint32_t)alignment_subs_signed;
 }
@@ -397,7 +411,7 @@ int main(void)
 	delay(10);
 	HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_1);
 	delay(10);
-	HAL_TIM_OC_Start_IT(&htim2, TIM_CHANNEL_1);
+	//HAL_TIM_OC_Start_IT(&htim2, TIM_CHANNEL_1);
 	delay(10);
 	HAL_TIM_OC_Start_IT(&htim1, TIM_CHANNEL_1);
 
@@ -431,7 +445,8 @@ int main(void)
 |::                      ::|
 |::             [D5 USB] ::|
 --------------------------*/
-	receive_alignment();
+	//receive_alignment();
+	receive_some();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -475,6 +490,11 @@ int main(void)
 				align_timer();
 				receive_alignment();
 				HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_15);
+			}
+			if (flag_some == 1) {
+				//HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_15);
+				HAL_TIM_OC_Start_IT(&htim2, TIM_CHANNEL_1);
+				flag_some = 0;
 			}
 			//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, __HAL_UART_GET_FLAG(&huart4, UART_FLAG_RXNE));
 		}
@@ -705,7 +725,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 1-1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_DOWN;
-  htim2.Init.Period = 15360000-1;
+  htim2.Init.Period = 15355200-1;//2559200-1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
