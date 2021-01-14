@@ -46,6 +46,7 @@
 #define INPUT_PC_DATA_LENGTH 5
 #define ALIGN_FRAMES_CMD 34
 #define START_TRIGGER_CMD 56
+#define STOP_TRIGGER_CMD 57
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -375,7 +376,7 @@ received_tuple parse_data(void) {
 void align_timer(void) {
 	alignment_subs_signed -= (int32_t)alignment_subs_received; // must not overfill uint32_t
 	while (alignment_subs_signed < 0) {
-		alignment_subs_signed += 15355200;
+		alignment_subs_signed += (htim2.Init.Period + 1);
 	}
 	TIM2->CCR1 = (uint32_t)alignment_subs_signed;
 }
@@ -518,6 +519,10 @@ int main(void)
 					align_timer();
 					HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_15);
 				}
+				else if (received.cmd == STOP_TRIGGER_CMD) {
+					HAL_TIM_OC_Stop_IT(&htim2, TIM_CHANNEL_1);
+				}
+
 				flag_data_received_from_pc = 0;
 				receive_from_pc();
 			}
@@ -750,7 +755,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 1-1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_DOWN;
-  htim2.Init.Period = 15355200-1;//2559200-1;
+  htim2.Init.Period = 2559200-1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -773,7 +778,7 @@ static void MX_TIM2_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 7680000;
+  sConfigOC.Pulse = 1280000;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_LOW;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
