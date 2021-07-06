@@ -466,6 +466,7 @@ int main(void)
 |::                      ::|
 |::             [D5 USB] ::|
 --------------------------*/
+	// htim2.Init.Period = 2559792-1;//2559200-1 - wide camera param
 	//receive_alignment();
 	receive_from_pc();
   /* USER CODE END 2 */
@@ -758,7 +759,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 1-1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_DOWN;
-  htim2.Init.Period = 2559200-1;
+  htim2.Init.Period = 2559794-1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
