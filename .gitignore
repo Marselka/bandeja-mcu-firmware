@@ -1,1 +1,8 @@
-.metadata/
+# Ignore everything
+synchro/*
+
+# But not these files...
+!.gitignore
+!synchro/Core
+!synchro/Drivers
+!synchro/synchro.ioc
