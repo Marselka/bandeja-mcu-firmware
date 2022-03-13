@@ -48,6 +48,8 @@ Any question — raise an issue, please.
 
 ## Wiring
 
+![](stm32_pins.png)
+
 <table>
   <tr> <td>MCU pin</td> <td>Name</td> <td>Role</td> </tr>
   <tr> <td>PB6</td> <td>I2C1_SCL</td> <td>I2C SCL line for IMU module data transfer</td> </tr>
@@ -60,7 +62,6 @@ Any question — raise an issue, please.
 </table>
 
 ![](stm32_connections.png)
-![](stm32_pins.png)
 
 Using this materials please do not forget to reference this repository and cite the paper:
 ```
