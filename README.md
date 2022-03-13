@@ -1,3 +1,5 @@
+# SmartDepthSync MCU Firmware
+
 ## System requirements
 The project was tested using:
 - Ubuntu 18.06
@@ -9,6 +11,7 @@ The project was tested using:
   <tr> <td>MCU-platform with built-in programmer</td> <td>STM32F4DISCOVERY</td> </tr>
   <tr> <td>IMU</td> <td>MPU-9150</td> </tr>
   <tr> <td>UART-to-USB stick</td> <td>any, we used stick based on CP2102 stone</td> </tr>
+  <tr> <td>3.5 mm mono (stereo, tri) jack connector with cable for depth camera triggering</td> <td>any</td> </tr>
 </table>
 
 The STM32 MCU-platform is chosen as it meets all the requirements described in the SmartDepthSync paper. The IMU is fed by external MCU reference clock for data rate stability.
@@ -49,20 +52,11 @@ Any question — raise an issue, please.
   <tr> <td>MCU pin</td> <td>Name</td> <td>Role</td> </tr>
   <tr> <td>PB6</td> <td>I2C1_SCL</td> <td>I2C SCL line for IMU module data transfer</td> </tr>
   <tr> <td>PB7</td> <td>I2C1_SDA</td> <td>I2C SDA line for IMU module data transfer</td> </tr>
-  <tr> <td>PH0</td> <td>RCC_OSC_IN</td> <td>Crystal resonator connection, already connected to MCU by default</td> </tr>
-  <tr> <td>PH1</td> <td>RCC_OSC_OUT</td> <td>Crystal resonator connection, already connected to MCU by default</td> </tr>
-  <tr> <td>PA0</td> <td>TIM5_CH1</td> <td>Real Time Clock, the core timer that provides (i) time counting, (ii) generates PPS signal, and (iii) triggers starts of time messages transmision to Lidar</td> </tr>
-  <tr> <td>PA6</td> <td>TIM2_CH1</td> <td></td> </tr>
-  <tr> <td>PE9</td> <td>TIM1_CH1</td> <td></td> </tr>
-  <tr> <td>PD12</td> <td>GPIO_OUT</td> <td></td> </tr>
-  <tr> <td>PD13</td> <td>GPIO_OUT</td> <td></td> </tr>
-  <tr> <td>PD14</td> <td>GPIO_OUT</td> <td></td> </tr>
-  <tr> <td>PD15</td> <td>GPIO_OUT</td> <td></td> </tr>
   <tr> <td>PC9</td> <td>GPIO_EXTI9</td> <td>Interrupt input pin from IMU module. IMU trigger this pin when new data sample is ready</td> </tr>
-  <tr> <td>PC10</td> <td>UART4_TX</td> <td>UART Transmit IMU data line to PC through UART-to-USB stick</td> </tr>
-  <tr> <td>PC11</td> <td>UART4_RX</td> <td>UART Receive line from PC through UART-to-USB stick, not used</td> </tr>
-  <tr> <td>PC12</td> <td>UART5_RX</td> <td>UART Receive line from Lidar, not used</td> </tr>
-  <tr> <td>PD2</td> <td>UART5_TX</td> <td>UART Transmit MCU clock line to Lidar through signal inverter (see note below)</td> </tr>
+  <tr> <td>PC10</td> <td>RCC_OSC_OUT</td> <td>UART Transmit IMU data and depth camera timestamps data line to PC through UART-to-USB stick</td> </tr>
+  <tr> <td>PC11</td> <td>TIM5_CH1</td> <td>UART Receive phase alignment commands line from PC through UART-to-USB stick</td> </tr>
+  <tr> <td>PA5</td> <td>TIM2_CH1</td> <td>Depth camera triggering output pin</td> </tr>
+  <tr> <td>PA6</td> <td>TIM3_CH1</td> <td>IMU sensor 19.2 MHz reference clock output pin</td> </tr>
 </table>
 
 ![](stm32_connections.png)
