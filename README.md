@@ -40,7 +40,7 @@ Camera 0 identifier for compatibility with other projects
 
 ## Software
 The software consists of ROS drivers for handling depth image and IMU data and precise timestamping.
-Lidar ROS driver is based on common [ROS package with our patch](https://github.com/MobileRoboticsSkoltech/bandeja-ros-src/tree/164b2ff17e6f09a3bc60ea67868f0ec08da14652) for precise timestamping.  
+Lidar ROS driver is based on common [ROS package with our patch](https://github.com/Marselka/bandeja-ros-src/tree/164b2ff17e6f09a3bc60ea67868f0ec08da14652) for precise timestamping.  
 IMU ROS driver is developed from scratch and produces [sensor_msgs/Imu](http://docs.ros.org/en/melodic/api/sensor_msgs/html/msg/Imu.html) messages.
 
 ## In case of questions
